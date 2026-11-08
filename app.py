@@ -147,6 +147,43 @@ def get_metadata(file_bytes, pil_img, rgb):
     return info
 
 
+YUNET_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
+             "face_detection_yunet/face_detection_yunet_2023mar.onnx")
+
+
+@st.cache_resource
+def get_yunet_path():
+    """優先使用 repo 內的模型檔;沒有就下載到暫存資料夾"""
+    import os, tempfile, urllib.request
+    local = "face_detection_yunet_2023mar.onnx"
+    if os.path.exists(local):
+        return local
+    path = os.path.join(tempfile.gettempdir(), local)
+    if not os.path.exists(path):
+        urllib.request.urlretrieve(YUNET_URL, path)
+    return path
+
+
+def detect_faces_yunet(rgb, score_th, nms_th=0.3):
+    """YuNet (DNN) 人臉偵測,信心度為模型輸出的 0~1 分數"""
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    h, w = bgr.shape[:2]
+    det = cv2.FaceDetectorYN.create(get_yunet_path(), "", (w, h),
+                                    score_th, nms_th, 5000)
+    _, faces = det.detect(bgr)
+    out = rgb.copy()
+    results = []
+    if faces is not None:
+        for f in faces:
+            x, y, fw, fh = [int(v) for v in f[:4]]
+            conf = float(f[-1])
+            cv2.rectangle(out, (x, y), (x + fw, y + fh), (0, 255, 0), 3)
+            cv2.putText(out, f"{conf:.2f}", (x, max(y - 8, 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            results.append((x, y, fw, fh, conf))
+    return out, results
+
+
 # ---------------------------------------------------------------- 載入影像
 uploaded = st.sidebar.file_uploader("上傳影像 (PNG / JPG / BMP)",
                                     type=["png", "jpg", "jpeg", "bmp"])
@@ -241,17 +278,32 @@ with tab3:
 
 # ---------------------------------------------------------------- ④
 with tab4:
-    if not hasattr(cv2, "CascadeClassifier"):
-        st.error(f"目前的 OpenCV 版本 ({cv2.__version__}) 不支援 CascadeClassifier,人臉偵測無法使用。")
+    methods = []
+    if hasattr(cv2, "CascadeClassifier"):
+        methods.append("Haar Cascade")
+    if hasattr(cv2, "FaceDetectorYN"):
+        methods.append("YuNet (DNN)")
+    if not methods:
+        st.error(f"目前的 OpenCV 版本 ({cv2.__version__}) 不支援任何內建人臉偵測方法。")
         st.stop()
-    c1, c2, c3 = st.columns(3)
-    scale = c1.slider("scaleFactor", 1.05, 1.5, 1.1, 0.05)
-    neighbors = c2.slider("minNeighbors", 1, 10, 5)
-    min_size = c3.slider("最小人臉尺寸 (px)", 20, 200, 40, 10)
-    out, faces = detect_faces(rgb, scale, neighbors, min_size)
-    st.image(out, caption=f"偵測到 {len(faces)} 張人臉", use_container_width=True)
+    method = st.radio("偵測方法", methods, horizontal=True)
+    try:
+        if method == "Haar Cascade":
+            c1, c2, c3 = st.columns(3)
+            scale = c1.slider("scaleFactor", 1.05, 1.5, 1.1, 0.05)
+            neighbors = c2.slider("minNeighbors", 1, 10, 5)
+            min_size = c3.slider("最小人臉尺寸 (px)", 20, 200, 40, 10)
+            out, faces = detect_faces(rgb, scale, neighbors, min_size)
+        else:
+            th = st.slider("信心度門檻", 0.3, 0.95, 0.7, 0.05)
+            out, faces = detect_faces_yunet(rgb, th)
+    except Exception as e:
+        st.error(f"人臉偵測失敗:{e}")
+        st.stop()
+    st.image(out, caption=f"{method}:偵測到 {len(faces)} 張人臉",
+             use_container_width=True)
     if faces:
         st.table([{"#": i + 1, "x": x, "y": y, "寬": w, "高": h,
                    "信心度": f"{c:.2f}"} for i, (x, y, w, h, c) in enumerate(faces)])
     else:
-        st.warning("未偵測到人臉,可嘗試調低 minNeighbors 或最小尺寸。")
+        st.warning("未偵測到人臉,可嘗試調低門檻或最小尺寸。")
