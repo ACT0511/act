@@ -13,7 +13,7 @@
     streamlit run app.py
 
 ## 線上 Demo
-(部署後貼上 Streamlit 網址)
+https://crlrkgdbrs22qbytpjqt9s.streamlit.app/
 
 ## 作者
 (C113151154 / 張幸祐)
