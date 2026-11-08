@@ -241,6 +241,9 @@ with tab3:
 
 # ---------------------------------------------------------------- ④
 with tab4:
+    if not hasattr(cv2, "CascadeClassifier"):
+        st.error(f"目前的 OpenCV 版本 ({cv2.__version__}) 不支援 CascadeClassifier,人臉偵測無法使用。")
+        st.stop()
     c1, c2, c3 = st.columns(3)
     scale = c1.slider("scaleFactor", 1.05, 1.5, 1.1, 0.05)
     neighbors = c2.slider("minNeighbors", 1, 10, 5)
